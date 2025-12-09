@@ -34,6 +34,50 @@ serve(async (req: Request) => {
     // TODO: validate application_id, task_type, due_at
     // - check task_type in VALID_TYPES
     // - parse due_at and ensure it's in the future
+    if(!application_id||!task_type||!due_at){
+      return new Response(
+        JSON.stringify({
+          error:"application_id, task_type, and due_at are required",
+        }),
+        {
+          status:400,
+          headers:{"Content-Type":"application/json" },
+        },
+      );
+    }
+    if (!VALID_TYPES.includes(task_type as (typeof VALID_TYPES)[number])) {
+      return new Response(
+        JSON.stringify({
+          error:"Invalid task_type. Ensure it is one from these: call, email, review",
+        }),
+        {
+          status:400,
+          headers:{"Content-Type":"application/json" },
+        },
+      );
+    }
+    const dueDate=new Date(due_at);
+    if (Number.isNaN(dueDate.getTime())) {
+      return new Response(
+        JSON.stringify({
+          error:"Invalid due_at. Enter valid ISO datetime string",
+        }),
+        {
+          status:400,
+          headers:{ "Content-Type":"application/json" },
+        },
+      );
+    }
+    const now=new Date();
+    if(dueDate<=now){
+      return new Response(
+        JSON.stringify({error:"ensure due_at in the future" }),
+        {
+          status:400,
+          headers:{"Content-Type":"application/json" },
+        },
+      );
+    }
 
     // TODO: insert into tasks table using supabase client
 
@@ -51,16 +95,54 @@ serve(async (req: Request) => {
     //   status: 200,
     //   headers: { "Content-Type": "application/json" },
     // });
+    const {data, error }=await supabase.from("tasks").insert({
+        application_id,
+        type: task_type,
+        due_at,
+        status: "open",
+      })
+      .select("id, application_id, type, due_at, status, created_at")
+      .single();
+      
+    if(error||!data){
+      console.error("Error inserting task:", error);
+      return new Response(
+        JSON.stringify({ error: "Failed to create task" }),
+        {
+          status:500,
+          headers:{"Content-Type":"application/json" },
+        },
+      );
+    }
 
-    return new Response(
-      JSON.stringify({ error: "Not implemented. Please complete this function." }),
-      { status: 501, headers: { "Content-Type": "application/json" } },
-    );
-  } catch (err) {
+    try{
+      const channel=supabase.channel("tasks");
+      const resp=await channel.send({
+        type: "broadcast",
+        event: "task.created",
+        payload:{
+          task_id: data.id,
+          application_id: data.application_id,
+          type: data.type,
+          status: data.status,
+          due_at: data.due_at,
+          created_at: data.created_at,
+        },
+      });
+      console.log("Broadcast result:", resp);
+      supabase.removeChannel(channel);
+    }catch(broadcastErr){
+      console.error("Failed to broadcast task.created:", broadcastErr);
+    }
+    return new Response(JSON.stringify({ success: true, task_id: data.id }),{
+      status: 200,
+      headers:{"Content-Type": "application/json"},
+    });
+  } catch(err){
     console.error(err);
-    return new Response(JSON.stringify({ error: "Internal server error" }), {
+    return new Response(JSON.stringify({ error: "Internal server error" }),{
       status: 500,
-      headers: { "Content-Type": "application/json" },
+      headers:{"Content-Type": "application/json"},
     });
   }
 });

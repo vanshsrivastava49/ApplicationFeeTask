@@ -145,16 +145,14 @@ Build a small page that:
 Add a section titled:
 
 ```
-## Stripe Answer
-```
-
-Write **8–12 lines** describing how you would implement a Stripe Checkout flow for an application fee, including:
-
-- When you insert a `payment_requests` row  
-- When you call Stripe  
-- What you store from the checkout session  
-- How you handle webhooks  
-- How you update the application after payment succeeds  
+When the user clicks “Pay application fee”, call a backend API that first inserts a `payment_requests` row tied to the `applications.id` (status `pending`, amount, currency), generating a local `payment_request_id`.  
+The backend then calls `stripe.checkout.sessions.create()` in server-side code, passing the amount, currency, customer email, and `mode: 'payment'`, plus `success_url`/`cancel_url` including the `payment_request_id` in query or `metadata`.  
+From the created Checkout Session, store `session.id`, `payment_intent` ID, amount, and currency back onto the `payment_requests` row so you can correlate webhooks later.  
+Redirect the client to `session.url` so Stripe hosts the payment flow.  
+Create a Stripe webhook endpoint (for example `/api/stripe/webhook`) that verifies the Stripe signature and listens for `checkout.session.completed` (and optionally `payment_intent.succeeded`) events.  
+In the webhook handler, look up the `payment_requests` row by `session.id` or by `payment_request_id` stored in `metadata`, and mark its `payment_status` as `paid` (or `failed` if the event indicates failure).  
+Once the payment is successful, update the related `applications` row—set `stage = 'paid'` or similar, and append a timeline entry like “Application fee paid” with timestamp.  
+Optionally, trigger a background job or notification (email/Slack) from the webhook handler so counselors see that the application moved to the next stage.
 
 ---
 
