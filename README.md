@@ -154,6 +154,7 @@ In the webhook handler, look up the `payment_requests` row by `session.id` or by
 Once the payment is successful, update the related `applications` row—set `stage = 'paid'` or similar, and append a timeline entry like “Application fee paid” with timestamp.  
 Optionally, trigger a background job or notification (email/Slack) from the webhook handler so counselors see that the application moved to the next stage.
 
+```
 ---
 
 ## Submission
